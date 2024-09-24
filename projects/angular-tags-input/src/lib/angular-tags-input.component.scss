@@ -8,6 +8,7 @@ ti-angular-tags-input {
   align-items: center;
   margin: -3px 0;
   &__inp-container {
+    border: solid red;
     width: 100%;
     display: flex;
     flex-direction: row;

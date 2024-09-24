@@ -1,4 +1,4 @@
-import { ScrollStrategy, ScrollStrategyOptions } from '@angular/cdk/overlay';
+import { Overlay, OverlayPositionBuilder, OverlayRef, ScrollStrategy, ScrollStrategyOptions } from '@angular/cdk/overlay';
 import {
   AfterViewInit,
   Component,
@@ -13,6 +13,9 @@ import {
   ViewChild,
   ViewEncapsulation,
   HostListener,
+  ViewContainerRef,
+  ChangeDetectorRef,
+  ElementRef,
 } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, NG_VALIDATORS, Validator, FormControl } from '@angular/forms';
 
@@ -22,6 +25,7 @@ import { AngularTagItem, AngularTagsInputConfig } from './tags-input-interfaces'
 import { UnAddedTagsPipe } from './un-added-tags.pipe';
 import { DropdownComponent } from './dropdown/dropdown.component';
 import { KEY_CODES } from './constants';
+import { TemplatePortal } from '@angular/cdk/portal';
 
 @Component({
   selector: 'ti-angular-tags-input',
@@ -35,6 +39,7 @@ import { KEY_CODES } from './constants';
 })
 export class AngularTagsInputComponent implements OnInit, AfterViewInit, ControlValueAccessor, OnChanges, Validator {
   @ViewChild(DropdownComponent, { static: false }) dropdown: DropdownComponent;
+  @ViewChild('dropdownTrigger', { static: false, read: ElementRef }) dropdownTrigger: ElementRef;
   @Input() config: AngularTagsInputConfig;
   @Input() tagsData: Array<any> = [];
   @Input() disabled = false;
@@ -76,9 +81,15 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
   isDropdownOpen: boolean;
   dropdownShownYet: boolean;
   unAddedTagsPipe = new UnAddedTagsPipe();
+  private overlayRef: OverlayRef;
   constructor(
     private readonly sso: ScrollStrategyOptions,
-    private tagsService: AngularTagsInputService
+    private tagsService: AngularTagsInputService,
+    private overlay: Overlay,
+    private overlayPositionBuilder: OverlayPositionBuilder,
+    private viewContainerRef: ViewContainerRef,
+    private cdr: ChangeDetectorRef
+
   ) { }
 
 
@@ -257,6 +268,9 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
   }
 
   ngAfterViewInit() {
+    if (this.dropdownTrigger) {
+      this.setupOverlay();
+    }
     if (!!this.config || !this.onChange) {
       console.warn('Please use ngModel or FormControlName with <ti-angular-tags-input>');
     }
@@ -287,6 +301,7 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
       this.onChange(
         this.tags
       );
+      this.adjustOverlayBasedOnTagInputHeight();
     }
   }
 
@@ -305,6 +320,8 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
     this.onChange(
       this.tags
     );
+    this.adjustOverlayBasedOnTagInputHeight();
+
   }
 
   /**
@@ -334,6 +351,7 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
       }
     } else {
       this.addTag(tag);
+      this.adjustOverlayBasedOnTagInputHeight();
       this.selectRelatedTags(tag);
       this.tagAdded.emit(
         this.tagsService.getMainTagAfterAdding(
@@ -475,6 +493,78 @@ export class AngularTagsInputComponent implements OnInit, AfterViewInit, Control
         this.dropdown.handleKeyUp($event);
       }
     }, 10);
+  }
+
+  setupOverlay() {
+    console.log('dropdownTrigger', this.dropdownTrigger);
+    if (this.dropdownTrigger) {
+      const positionStrategy = this.overlayPositionBuilder
+        .flexibleConnectedTo(this.dropdownTrigger)
+        .withPositions([
+          {
+            originX: 'start',
+            originY: 'bottom',
+            overlayX: 'start',
+            overlayY: 'top'
+          }
+        ]);
+      this.overlayRef = this.overlay.create({
+        positionStrategy,
+        hasBackdrop: false
+      });
+
+      const resizeObserver = new ResizeObserver(() => {
+        this.overlayRef.updatePositionStrategy(positionStrategy)
+        this.overlayRef.updatePosition()
+
+      });
+      resizeObserver.observe(this.dropdownTrigger.nativeElement);
+
+      if (this.dropDownTemplate && this.overlayRef) {
+        const templatePortal = new TemplatePortal(this.dropDownTemplate, this.viewContainerRef);
+        this.overlayRef.attach(templatePortal);
+      }
+    } else {
+      console.warn("dropdownTrigger is undefined")
+    }
+    if (this.overlayRef.hasAttached()) {
+      this.overlayRef.detach();
+    }
+  }
+
+  updateOverlayPosition() {
+    console.log('dropdownTrigger', this.dropdownTrigger, "overlayRef", this.overlayRef);
+    if (this.overlayRef && this.overlayRef.hasAttached()) {
+      this.cdr.detectChanges();
+      this.overlayRef.updatePosition();
+    } else {
+      console.warn("Overlay reference is undefined")
+    }
+  }
+
+  adjustOverlayBasedOnTagInputHeight() {
+    if (!this.overlayRef || !this.dropdownTrigger || !this.dropdownTrigger.nativeElement) {
+      console.warn("Overlay or dropdownTrigger is undefined");
+      return;
+    }
+    console.log(this.overlayRef, this.dropdownTrigger)
+    // const inputContainerHeight = this.dropdownTrigger.nativeElement.offsetHeight;
+    // console.log(inputContainerHeight)
+    // const positionStrategy = this.overlay.position()
+    //   .flexibleConnectedTo(this.dropdownTrigger)
+    //   .withPositions([
+    //     {
+    //       originX: 'start',
+    //       originY: 'bottom',
+    //       overlayX: 'start',
+    //       overlayY: 'top',
+    //       // offsetY: inputContainerHeight // Dynamically adjust the offset
+    //     }
+    //   ]);
+    // console.log(positionStrategy)
+
+    // this.overlayRef = this.overlay.create({ positionStrategy: positionStrategy })
+    // this.overlayRef.updatePosition();
   }
 
 }
